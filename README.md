@@ -1,2 +1,2 @@
 # cobec-competition
-Codigos referente ao projeto dos alunos de IC para a combeticao do cobec.
+Codigos referentes ao projeto dos alunos de IC para a competicao do COBEC.
