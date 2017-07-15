@@ -1,0 +1,219 @@
+C51 COMPILER V9.55   MAIN                                                                  07/15/2017 17:00:16 PAGE 1   
+
+
+C51 COMPILER V9.55, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN .\Objects\main.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE main.c OPTIMIZE(8,SPEED) BROWSE INCDIR(..\libraries;C:\Nordic Semiconduc
+                    -tor\nRFgo SDK 2.3.0.10040\source_code\hal;C:\Nordic Semiconductor\nRFgo SDK 2.3.0.10040\source_code\hal\nrf24le1;C:\Nord
+                    -ic Semiconductor\nRFgo SDK 2.3.0.10040\source_code\compiler\common;C:\Nordic Semiconductor\nRFgo SDK 2.3.0.10040\source_
+                    -code\compiler\c51;C:\Nordic Semiconductor\nRFgo SDK 2.3.0.10040\source_code\compiler) DEBUG OBJECTEXTEND PRINT(.\Listing
+                    -s\main.lst) TABS(2) OBJECT(.\Objects\main.obj)
+
+line level    source
+
+   1          //Subenderecos usados no sistema
+   2          #define MY_SUB_ADDR 0x01
+   3          
+   4          #include "nrf24le1.h"
+   5          #include "reg24le1.h" //Definiï¿½ï¿½es de muitos endereï¿½os de registradores.
+   6          #include "nRF-SPIComands.h" //Comunicacao RF
+   7          #include "hal_w2_isr.h" //Comunicacao I2C
+   8          #include "hal_delay.h" //delay
+   9          #include "pacotes_inerciais.h" //pacotes para enviar
+  10          #include "dmp.h" //configuracao e uso da dmp da mpu6050
+  11          #include "timer0.h" //timer for aquisition
+  12          
+  13          #define STATUS_LED  P10
+  14          #define PSDMP 42
+  15          
+  16          uint8_t xdata fifoBuffer[64] = {0};
+  17          uint8_t xdata numbPackets;
+  18          
+  19          ////////////////////////
+  20          //Functions in Sensor //
+  21          ////////////////////////
+  22          /**
+  23          * Inicia a DMP, deve ser chamada durante a configuracao
+  24          */
+  25          void initial_setup_dmp() large;
+  26          
+  27          /**
+  28          * Realiza uma leitura da fifo da dmp e envia para o host
+  29          */
+  30          void DataAcq() large;
+  31          
+  32          ///////////////////
+  33          //Implementation //
+  34          ///////////////////
+  35          
+  36          void pisca_led(){
+  37   1          STATUS_LED = 1; delay_ms(250); STATUS_LED = 0; delay_ms(250);
+  38   1      }
+  39          /**
+  40          * Seta os pinos do nrf como saidas e entradas de acordo com as funcoes desejadas
+  41          */
+  42          void iniciarIO(void){
+  43   1          P0DIR = 0x00;   // Tudo output
+  44   1          P1DIR = 0x00;   // Tudo output
+  45   1          P0CON = 0x00; P1CON = 0x00; //Reseting PxCON registers
+  46   1      
+  47   1          P0DIR &= ~(1<<4);//P04 = w2scl = output
+  48   1          P0DIR &= ~(1<<3);//P03 = Status led = output
+  49   1          //NOTE: PQ p1com?
+  50   1          P1CON |= 0x53; // All general I/O 0101 0011
+  51   1      }
+C51 COMPILER V9.55   MAIN                                                                  07/15/2017 17:00:16 PAGE 2   
+
+  52          
+  53          
+  54          void setup() {
+  55   1          iniciarIO();
+  56   1          pisca_led(); //primeira piscada
+  57   1          rf_init(ADDR_HOST,ADDR_HOST,10,RF_DATA_RATE_2Mbps,RF_TX_POWER_0dBm);
+  58   1          pisca_led(); //segunda piscada
+  59   1          hal_w2_configure_master(HAL_W2_100KHZ);
+  60   1          pisca_led(); //terceira piscada
+  61   1          initial_setup_dmp();//MPU_6050 and DPM
+  62   1          pisca_led(); //13
+  63   1          setup_T0_ticks(6667, 1); //Timer of 200Hz for Aquisition
+  64   1          pisca_led(); //14
+  65   1          start_T0();
+  66   1      }
+  67          
+  68          void main(void) {
+  69   1          setup();
+  70   1          while(1){ //Loop
+  71   2              /////////////////////
+  72   2              //Timer Aquisition //
+  73   2              /////////////////////
+  74   2              if(timer_elapsed){
+  75   3                  timer_elapsed = 0;
+  76   3                  numbPackets = getFIFOCount() / PSDMP;//floor
+  77   3                  while (numbPackets > 0) {
+  78   4                      getFIFOBytes(fifoBuffer, PSDMP);  //read a packet from FIFO
+  79   4                      numbPackets--;
+  80   4                  }
+  81   3                  STATUS_LED = !STATUS_LED;
+  82   3              }
+  83   2              ////////////////////
+  84   2              //Comunicacao RF //
+  85   2              ////////////////////
+  86   2              if(newPayload){
+  87   3                  sta = 0;
+  88   3                  newPayload = 0;
+  89   3                  //verifica se o sinal eh direcionado para mim
+  90   3                  if(rx_buf[0] == MY_SUB_ADDR){
+  91   4                      switch(rx_buf[1]){
+  92   5                          case CMD_READ:
+  93   5                          tx_buf[0] = MY_SUB_ADDR;
+  94   5                          tx_buf[1] = fifoBuffer[MOTIONAPPS_FIFO_I_ACCEL_XH];
+  95   5                          tx_buf[2] = fifoBuffer[MOTIONAPPS_FIFO_I_ACCEL_XL];//X_AC
+  96   5                          tx_buf[3] = fifoBuffer[MOTIONAPPS_FIFO_I_ACCEL_YH];
+  97   5                          tx_buf[4] = fifoBuffer[MOTIONAPPS_FIFO_I_ACCEL_YL];//Y_AC
+  98   5                          tx_buf[5] = fifoBuffer[MOTIONAPPS_FIFO_I_ACCEL_ZH];
+  99   5                          tx_buf[6] = fifoBuffer[MOTIONAPPS_FIFO_I_ACCEL_ZL];//Z_AC
+ 100   5                          tx_buf[7] = fifoBuffer[MOTIONAPPS_FIFO_I_GYRO_XH];
+ 101   5                          tx_buf[8] = fifoBuffer[MOTIONAPPS_FIFO_I_GYRO_XL];//X_GY
+ 102   5                          tx_buf[9] = fifoBuffer[MOTIONAPPS_FIFO_I_GYRO_YH];
+ 103   5                          tx_buf[10] = fifoBuffer[MOTIONAPPS_FIFO_I_GYRO_YL];//Y_GY
+ 104   5                          tx_buf[11] = fifoBuffer[MOTIONAPPS_FIFO_I_GYRO_ZH];
+ 105   5                          tx_buf[12] = fifoBuffer[MOTIONAPPS_FIFO_I_GYRO_ZL];//Z_GY
+ 106   5                          tx_buf[13] = fifoBuffer[MOTIONAPPS_FIFO_I_QUAT_WH];
+ 107   5                          tx_buf[14] = fifoBuffer[MOTIONAPPS_FIFO_I_QUAT_WL];//W_quat
+ 108   5                          tx_buf[15] = fifoBuffer[MOTIONAPPS_FIFO_I_QUAT_XH];
+ 109   5                          tx_buf[16] = fifoBuffer[MOTIONAPPS_FIFO_I_QUAT_XL];//X_quat
+ 110   5                          tx_buf[17] = fifoBuffer[MOTIONAPPS_FIFO_I_QUAT_YH];
+ 111   5                          tx_buf[18] = fifoBuffer[MOTIONAPPS_FIFO_I_QUAT_YL];//Y_quat
+ 112   5                          tx_buf[19] = fifoBuffer[MOTIONAPPS_FIFO_I_QUAT_ZH];
+ 113   5                          tx_buf[20] = fifoBuffer[MOTIONAPPS_FIFO_I_QUAT_ZL];//Z_quat
+C51 COMPILER V9.55   MAIN                                                                  07/15/2017 17:00:16 PAGE 3   
+
+ 114   5                          TX_Mode_NOACK(21);
+ 115   5                          RX_Mode();
+ 116   5                          break;
+ 117   5                          case CMD_LIGHT_UP_LED:
+ 118   5                          STATUS_LED = 1;
+ 119   5                          send_rf_command_with_arg(CMD_LIGHT_UP_LED,CMD_OK,MY_SUB_ADDR);
+ 120   5                          break;
+ 121   5                          case CMD_TURN_OFF_LED:
+ 122   5                          STATUS_LED = 0;
+ 123   5                          send_rf_command_with_arg(CMD_TURN_OFF_LED,CMD_OK,MY_SUB_ADDR);
+ 124   5                          break;
+ 125   5                          case 0xAA:
+ 126   5                          tx_buf[0] = MY_SUB_ADDR;
+ 127   5                          tx_buf[1] = 0x00; tx_buf[2] = 0x01; tx_buf[3] = 0x02;
+ 128   5                          tx_buf[4] = 0x03; tx_buf[5] = 0x04; tx_buf[6] = 0x05;
+ 129   5                          tx_buf[7] = 0x06; tx_buf[8] = 0x07; tx_buf[9] = 0x08;
+ 130   5                          tx_buf[10] = 0x09; tx_buf[11] = 0x0A; tx_buf[12] = 0x0B;
+ 131   5                          tx_buf[13] = 0x0C; tx_buf[14] = 0x0D; tx_buf[15] = 0x0E;
+ 132   5                          tx_buf[16] = 0x0F; tx_buf[17] = 0x10; tx_buf[18] = 0x11;
+ 133   5                          tx_buf[19] = 0x12; tx_buf[20] = 0x13;
+ 134   5                          TX_Mode_NOACK(21);
+ 135   5                          RX_Mode();
+ 136   5                          break;
+ 137   5                          default:
+ 138   5                          //Pisca Led caso for um comando desconhecido
+ 139   5                          pisca_led();
+ 140   5                          break;
+ 141   5                      }/*END SWITCH*/
+ 142   4                  }/*END IF MY SUB ADDR*/
+ 143   3              } /* END Comunicacao RF */
+ 144   2          }/*END LOOP*/
+ 145   1      }/*END MAIN*/
+ 146          
+ 147          
+ 148          ///////////////////////
+ 149          //FUNCIONS in Sensor //
+ 150          ///////////////////////
+ 151          
+ 152          void initial_setup_dmp() large {
+ 153   1          uint8_t ret;
+ 154   1          mpu_8051_malloc_setup(); //Malloc pool for mpu library
+ 155   1          pisca_led();//4
+ 156   1          ret = (uint8_t) mpu_testConnection();
+ 157   1          pisca_led();//5
+ 158   1          if(ret){
+ 159   2              pisca_led();//6
+ 160   2              mpu_initialize(); //Initializes the IMU
+ 161   2              pisca_led();//7
+ 162   2              ret =  dmpInitialize();  //Initializes the DMP
+ 163   2              pisca_led();//8
+ 164   2              delay_ms(50);
+ 165   2              pisca_led();//9
+ 166   2              if(ret == 0){
+ 167   3                  pisca_led();//10
+ 168   3                  setDMPEnabled(true);
+ 169   3                  pisca_led();//11
+ 170   3                  /*Calibrated at 03 Mai 2017*/
+ 171   3                  setXAccelOffset(-520);
+ 172   3                  setYAccelOffset(632);
+ 173   3                  setZAccelOffset(914);
+ 174   3                  setXGyroOffset(22);
+ 175   3                  setYGyroOffset(-8);
+C51 COMPILER V9.55   MAIN                                                                  07/15/2017 17:00:16 PAGE 4   
+
+ 176   3                  setZGyroOffset(26);
+ 177   3                  pisca_led();//12
+ 178   3              }
+ 179   2          }
+ 180   1      }
+ 181          
+ 182          
+ 183          //interrupção do I2C - NOT USED
+ 184          void I2C_IRQ (void) interrupt INTERRUPT_SERIAL {
+ 185   1          I2C_IRQ_handler();
+ 186   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   7526    ----
+   CONSTANT SIZE    =   2173    ----
+   XDATA SIZE       =    648     243
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      6      46
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      1    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

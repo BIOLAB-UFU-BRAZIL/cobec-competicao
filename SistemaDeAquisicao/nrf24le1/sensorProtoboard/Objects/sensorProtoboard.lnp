@@ -1,0 +1,6 @@
+".\Objects\main.obj",
+".\Objects\hal_delay.obj",
+".\Objects\hal_w2_isr.obj" 
+TO ".\Objects\sensorProtoboard" 
+PRINT(".\Listings\sensorProtoboard.m51") RAMSIZE(256) 
+DISABLEWARNING (16) 
